@@ -9,7 +9,7 @@
 #   * BotYann:             French translation, replay files
 #   * player1 fanatic:     Usability suggestions
 #   * blind biker:         Usability suggestions
-#   * MouseyPounds:        Partial DLC civs, updates for patch 1.0.1.217
+#   * MouseyPounds:        DLC civs, further localization, patch 1.275 compatibility
 # Forum names are on CivFanatics unless otherwise noted.
 #
 # Please note that this is based on reverse engineered serialiized data.
@@ -31,6 +31,7 @@ import uuid
 import optparse
 import codecs
 import signal
+import re
 
 # safety belt, comment in if you want a one minute timeout on a
 # web server that runs Linux 
@@ -40,7 +41,7 @@ import signal
 debug = False
 
 # cheap "I forgot about localization again even though English isn't even my native language" hack
-locale = "en"
+locale = "auto"
 class L(object):
     """ A localized string """
     def __init__(self, en, **kwargs):
@@ -55,69 +56,75 @@ class L(object):
         return self.s() % x
     def __eq__(self, x):
         return self.s() == x
+    def items(self):
+        return self.__dict__.items()
 
 def p(*s):
     """ Helper function replacing print for utf-8 output"""
     for e in s:
         if not isinstance(e, unicode):
             e = unicode(e)
-        if debug:
-          sys.stdout.write(e.encode("utf-8"))
-          sys.stdout.write(" ")
-          sys.stdout.write("\n")
+        sys.stdout.write(e.encode("utf-8"))
+        sys.stdout.write(" ")
+    sys.stdout.write("\n")
 
-# difficulty level names
+# difficulty level names TXT_KEY_HANDICAP_* Still need ja and ru
 difficulty_strings = [
-    L("Settler"  , fr="Colon"),
-    L("Chieftain", fr="Chef tribal"),
-    L("Warlord",   fr="Seigneur de Guerre"),
-    L("Prince",    fr="Prince"),
-    L("King",      fr="Roi"),
-    L("Emperor",   fr="Empereur"),
-    L("Immortal",  fr="Immortel"),
-    L("Deity",     fr="Divinité"),
+    L("Settler",   fr="Colon",       de="Siedler",       es="Colono",    it="Colono",      ko="개척자", pl="Osadnik"),
+    L("Chieftain", fr="Chef tribal", de="Häuptling",     es="Jefe",      it="Capitano",    ko="족장",  pl="Wódz"),
+    L("Warlord",   fr="Seigneur",    de="Kriegsherr",    es="Caudillo",  it="Condottiero", ko="대장군", pl="Watażka"),
+    L("Prince",    fr="Prince",      de="Prinz",         es="Príncipe",  it="Principe",    ko="왕자",  pl="Książę"),
+    L("King",      fr="Roi",         de="König",         es="Rey",       it="Re",          ko="왕",   pl="Król"),
+    L("Emperor",   fr="Empereur",    de="Kaiser",        es="Emperador", it="Imperatore",  ko="황제",  pl="Imperator"),
+    L("Immortal",  fr="Immortel",    de="Unsterblicher", es="Inmortal",  it="Immortale",   ko="불멸자", pl="Nieśmiertelny"),
+    L("Deity",     fr="Divinité",    de="Gottheit",      es="Deidad",    it="Divinità",    ko="신",   pl="Bóstwo"),
+
 ]
 
-# map sizes
+# map sizes TXT_KEY_WORLD_* Still need ja and ru
 # this time, taken from the earth maps...
 map_sizes = [
-    [ L("Duel",    fr="Duel"),      40, 24 ],
-    [ L("Tiny",    fr="Minuscule"), 56, 36 ],
-    [ L("Small",   fr="Petite"),    66, 42 ],
-    [ L("Standard",fr="Normale"),   80, 52 ],
-    [ L("Large",   fr="Grande"),   104, 64 ],
-    [ L("Huge",    fr="Immense"),  128, 80 ],
+    [ L("Duel",     fr="Duel",      de="Duell",    es="Duelo",    it="Duello",    ko="일대일", pl="Pojedynkowa"), 40, 24 ],
+    [ L("Tiny",     fr="Minuscule", de="Winzig",   es="Diminuto", it="Minuscola", ko="초소형", pl="Miniaturowa"), 56, 36 ],
+    [ L("Small",    fr="Petite",    de="Klein",    es="Pequeño",  it="Piccola",   ko="소형",  pl="Mała"),        66, 42 ],
+    [ L("Standard", fr="Normale",   de="Standard", es="Estándar", it="Normale",   ko="기본",  pl="Zwykła"),      80, 52 ],
+    [ L("Large",    fr="Grande",    de="Groß",     es="Grande",   it="Grande",    ko="대형",  pl="Duża"),        104, 64 ],
+    [ L("Huge",     fr="Immense",   de="Riesig",   es="Enorme",   it="Enorme",    ko="초대형", pl="Ogromna"),     128, 80 ],
 ]
 
-# victory types
+# victory types TXT_KEY_CIV5_VICTORY_LOSS_TITLE and TXT_KEY_VICTORY_* Still need ja and ru
 victory_types = {
-   -1:      L("Loss",       fr="Perdu"),
-    0:      L("Time",       fr="Temps"),
-    1:      L("Science",    fr="Scientifique"),
-    2:      L("Domination", fr="Militaire"),
-    3:      L("Culture",    fr="Culturelle"),
-    4:      L("Diplomatic", fr="Diplomatique"),
+   -1: L("Loss",       fr="Défaite",      de="Niederlage",   es="Derrota",                 it="Sconfitta",       ko="손실", pl="Porażka"),
+    0: L("Time",       fr="Temps",        de="Zeit",         es="Victoria por tiempo",     it="A tempo",         ko="시간", pl="Czasowe"),
+    1: L("Science",    fr="Scientifique", de="Wissenschaft", es="Ciencia",                 it="Scienza",         ko="과학", pl="Naukowe"),
+    2: L("Domination", fr="Militaire",    de="Herrschaft",   es="Victoria por dominación", it="Per Dominazione", ko="정복", pl="Dominacja"),
+    3: L("Cultural",   fr="Culturelle",   de="Kultur",       es="Victoria cultural",       it="Culturale",       ko="문화", pl="Kulturowe"),
+    4: L("Diplomatic", fr="Diplomatique", de="Diplomatie",   es="Victoria diplomática",    it="Diplomatica",     ko="외교", pl="Dyplomatyczne"),
 }
 
-# advanced game options
+# advanced game options TXT_KEY_MP_OPTION_ALWAYS_PEACE and TXT_KEY_GAME_OPTION_* Still need ja and ru
 game_options = {
-    0:      L("No City Razing",        fr="Impossible de raser les villes"),
-    1:      L("No Barbarians",         fr="Aucun barbare"),
-    2:      L("Raging Barbarians",     fr="Barbares déchaînés"),
-    3:      L("Always war",            ),
-    4:      L("Always peace",          ),
-    5:      L("One-City Challenge",    fr="Ville unique"),
-    6:      L("No Changing War Peace", ),
-    7:      L("New Random Seed",       fr="Nouvelles valeurs aléatoires"),
-    8:      L("Lock Mods",             ),
-    9:      L("Complete Kills",        fr="Destruction totale"),
-   10:      L("No Ancient Ruins",      fr="Pas de ruines antiques"),
-   11:      L("Random Personalities",  fr="Personnalités aléatoires"),
-   12:      L("Allow Policy Saving",   ),
-   13:      L("Allow Promotion Saving",),
-   14:      L("Enable Turn Timer",     fr="Active le chrono. tour"),
-   15:      L("Quick Combat",          fr="Combat rapide"),
-   16:      L("Disable Start Bias",    fr="Désactiver les préférences de départ"),
+    0: L("No City Razing",          fr="Impossible de raser les villes",       de="Keine Stadtvernichtung",                       es="Sin arrasar ciudades",           it="Nessuna possibilità di razziare le città",       ko="도시 파괴 불가",        pl="Bez niszczenia miast"),
+    1: L("No Barbarians",           fr="Aucun barbare",                        de="Keine Barbaren",                               es="Sin bárbaros",                   it="No barbari",                                     ko="야만인 없음",           pl="Bez barbarzyńców"),
+    2: L("Raging Barbarians",       fr="Barbares déchaînés",                   de="Wütende Barbaren",                             es="Bárbaros coléricos",             it="Barbari furiosi",                                ko="야만인 부흥",           pl="Inwazja barbarzyńców"),
+    3: L("Always War",              fr="Guerre constante",                     de="Immer Krieg",                                  es="Siempre en guerra",              it="Sempre in guerra",                               ko="항상 전쟁 상태",        pl="Permanentna wojna"),
+    4: L("Always Peace",            fr="Paix constante",                       de="Immer Frieden",                                es="Siempre en paz",                 it="Sempre in pace",                                 ko="항상 평화 상태",        pl="Wieczny pokój"),
+    5: L("One-City Challenge",      fr="Ville unique",                         de="Einzelstadt-Wettkampf",                        es="Reto de una sola ciudad",        it="Sfida con una singola città",                    ko="단일 도시로 도전",      pl="Starcie pojedynczych miast"),
+    6: L("Permanent War or Peace",  fr="Aucun changement guerre - paix",       de="Ständiger Krieg oder Frieden",                 es="Guerra o paz permanentes",       it="Guerra o pace permanenti",                       ko="영구적 전쟁 또는 평화", pl="Permanentna wojna lub pokój"),
+    7: L("New Random Seed",         fr="Nouvelles valeurs aléatoires",         de="Zufallsgenerator",                             es="Nuevo valor de origen al azar",  it="Nuovo seme casuale",                             ko="무작위 시드",           pl="Losowa kalkulacja obrażeń"),
+    8: L("Lock Mods",               fr="Verrouiller les mods",                 de="Mods sperren",                                 es="Bloquear \"mods\"",              it="Blocca Mod",                                     ko="모드 잠금",             pl="Blokada modów"),
+    9: L("Complete Kills",          fr="Destruction totale",                   de="Komplette Vernichtung",                        es="Destrucción total",              it="Sterminio completo",                             ko="전멸전",                pl="Pełna eliminacja"),
+   10: L("No Ancient Ruins",        fr="Pas de ruines antiques",               de="Keine Alten Ruinen",                           es="Sin Ruinas antiguas",            it="Nessuna Antica rovina",                          ko="고대 유적 없음",        pl="Bez starożytnych ruin"),
+   11: L("Random Personalities",    fr="Personnalités aléatoires",             de="Zufällige Persönlichkeiten",                   es="Personalidades al azar",         it="Personalità casuale",                            ko="무작위 특성",           pl="Losowe usposobienie"),
+   12: L("Allow Policy Saving",     fr="Autoriser l'économie de doctrines",    de="Ermöglicht das Speichern von Sozialpolitiken", es="Permitir guardarse política",    it="Permetti l'accumulo di Politiche",               ko="정책 저장 허용",        pl="Zezwalaj na zapisy z pol. społ."),
+   13: L("Allow Promotion Saving",  fr="Autoriser l'économie de promotions",   de="Ermöglicht das Speichern von Beförderungen",   es="Permitir guardarse ascenso",     it="Permetti l'accumulo di promozioni",              ko="승급 저장 허용",        pl="Zezwalaj na zapisy z awansem"),
+   14: L("Enable Turn Timer",       fr="Active le chrono. tour",               de="Rundenzähler aktivieren",                      es="Activa el contador del turno ",  it="Attiva il timer dei turni ",                     ko="턴 타이머 사용",        pl="Włącz stoper"),
+   15: L("Quick Combat",            fr="Combat rapide",                        de="Schneller Kampf",                              es="Combate rápido",                 it="Combattimento rapido",                           ko="빠른 전투",             pl="Szybka walka"),
+   16: L("Disable Start Bias",      fr="Désactiver les préférences de départ", de="Keine Startvorgaben",                          es="Desactivar disposición inicial", it="Disattiva posizionamento iniziale intelligente", ko="무작위 시작 위치",      pl="Start z losowym rozmieszczeniem"),
+   17: L("Disable Research",        fr="Désactiver recherches",                de="Forschung ausschalten",                        es="Desactivar investigación",       it="Disattiva la Ricerca",                           ko="연구 비활성화",         pl="Wyłącz badania"),
+   18: L("Disable Happiness",       fr="Désactiver bonheur",                   de="Zufriedenheit ausschalten",                    es="Desactivar Felicidad",           it="Disattiva la Felicità",                          ko="행복 비활성화",         pl="Wyłącz zadowolenie"),
+   19: L("Disable Policies",        fr="Désactiver doctrines",                 de="Politiken ausschalten",                        es="Desactivar políticas",           it="Disattiva le Politiche",                         ko="정책 비활성화",         pl="Wyłącz ustroje"),
+   20: L("Disable Tutorial Popups", fr="Désactiver la fonction didacticiel",   de="Tutorial-Popups deaktivieren",                 es="Desactivar tutoriales",          it="Disattiva i tutorial pop-up",                    ko="튜토리얼 팝업창 해제",  pl="Wyłącz pojawianie się podpowiedzi samouczka"),
 }
 option_noraze = 0;
 option_occ = 5;
@@ -129,32 +136,36 @@ citystate_color = ["#dddddd", "black"]
 # replay files don't actually contain the name of the civ,
 # so we guess from the first city's name...
 # the player civ is an exception.
+# MP Localization notes: some languages (mainly German and Polish) have multiple
+# entries on their text keys and I have no idea which is correct so I have arbitrarily
+# chosen the first on the list in each case.
 civs = [
-# Standard civs
-    [ L("American Empire",  fr="Empire américain"), L("Washington"),                    "#ffffff", "#1f3378" ],
-    [ L("Arabian Empire",   fr="Empire arabe"),     L("Mecca",        fr="La Mecque"),  "#92dd09", "#2b572d" ],
-    [ L("Aztec Empire",     fr="Empire aztèque"),   L("Tenochtitlan"),                  "#88eed4", "#a13922" ],
-    [ L("Chinese Empire",   fr="Empire chinois"),   L("Beijing",      fr="Pékin"),      "#ffffff", "#009452" ],
-    [ L("Egyptian Empire",  fr="Empire égyptien"),  L("Thebes",       fr="Thèbes" ),    "#5200d0", "#fffb03" ],
-    [ L("English Empire",   fr="Empire anglais"),   L("London",       fr="Londres"),    "#ffffff", "#6c0200" ],
-    [ L("French Empire",    fr="Empire français"),  L("Paris"),                         "#ebeb8a", "#418dfd" ],
-    [ L("German Empire",    fr="Empire allemand"),  L("Berlin"),                        "#242b20", "#b3b1b8" ],
-    [ L("Greek Empire",     fr="Empire grec"),      L("Athens",       fr="Athènes"),    "#418dfd", "#ffffff" ],
-    [ L("Indian Empire",    fr="Empire indien"),    L("Delhi"),                         "#ff9931", "#128706" ],
-    [ L("Iroquois Empire",  fr="Empire iroquois"),  L("Onondaga"),                      "#fbc981", "#415656" ],
-    [ L("Japanese Empire",  fr="Empire japonais"),  L("Kyoto"),                         "#b80000", "#ffffff" ],
-    [ L("Ottoman Empire",   fr="Empire ottoman"),   L("Istanbul"),                      "#12521e", "#f7f8c7" ],
-    [ L("Persian Empire",   fr="Empire perse"),     L("Persepolis",   fr="Persépolis"), "#f5e637", "#b00703" ],
-    [ L("Roman Empire",     fr="Empire romain"),    L("Rome"),                          "#efc600", "#460076" ],
-    [ L("Russian Empire",   fr="Empire russe"),     L("Moscow",       fr="Moscou"),     "#000000", "#eeb400" ],
-    [ L("Siamese Empire",   fr="Empire siamois"),   L("Sukhothai",    fr="Sukhothaï"),  "#b00703", "#f5e637" ],
-    [ L("Songhai Empire",   fr="Empire songhaï"),   L("Gao",          fr="Gao"),        "#5a0009", "#d59113" ],
-# DLC civs 
-    [ L("Babylonian Empire",fr="Empire babylonien"),L("Babylon",      fr="Babylone"),   "#c9f8ff", "#2b5162" ],
-    [ L("Mongol Empire"),                           L("Karakorum"),                     "#ff7800", "#510009" ],
-    [ L("Spanish Empire"),                          L("Madrid"),                        "#ffffff", "#222222" ],
-    [ L("Inca Empire"),                             L("Cusco"),                         "#ffffff", "#222222" ],
-    [ L("Polynesian Empire"),                       L("Honolulu"),                      "#ffffff", "#222222" ],
+# Standard civs TXT_KEY_CIV_*_DESC and TXT_KEY_CITY_NAME_* Still need some ja and ru
+    [ L("American Empire",fr="Empire américain",de="Amerikanisches Reich",es="Imperio Estadounidense",it="Impero Americano",ko="미국 제국",pl="Imperium amerykańskie",ja="アメリカ文明"), L("Washington",fr="Washington",de="Washington",es="Washington",it="Washington",ko="워싱턴",pl="Waszyngton",ja="ワシントン",ru="Вашингтон"), "#ffffff", "#1f3378" ],
+    [ L("Arabian Empire",fr="Empire arabe",de="Arabisches Reich",es="Imperio Árabe",it="Impero Arabo",ko="아라비아 제국",pl="Imperium arabskie"), L("Mecca",fr="La Mecque",de="Mekka",es="La Meca",it="Mecca",ko="메카",pl="Mekka",ja="メッカ",ru="Мекка"), "#92dd09", "#2b572d" ],
+    [ L("Aztec Empire",fr="Empire aztèque",de="Aztekenreich",es="Imperio Azteca",it="Impero Azteco",ko="아즈텍 제국",pl="Imperium Azteckie",ru="Ацтекская империя"), L("Tenochtitlan",fr="Tenochtitlan",de="Tenochtitlan",es="Tenochtitlán",it="Tenochtitlan",ko="테노치티틀란",pl="Tenochtitlan",ja="テノチティタラン",ru="Теночтитлан"), "#88eed4", "#a13922" ],
+    [ L("Chinese Empire",fr="Empire chinois",de="Chinesisches Kaiserreich",es="Imperio Chino",it="Impero Cinese",ko="중국 제국",pl="Cesarstwo chińskie",ja="中国文明",ru="Китай"), L("Beijing",fr="Pékin",de="Peking",es="Pekín",it="Pechino",ko="북경",pl="Pekin",ja="北京",ru="Пекин"), "#ffffff", "#009452" ],
+    [ L("Egyptian Empire",fr="Empire égyptien",de="Ägyptisches Reich",es="Imperio Egipcio",it="Impero Egizio",ko="이집트 제국",pl="Imperium egipskie"), L("Thebes",fr="Thèbes",de="Theben",es="Tebas",it="Tebe",ko="테베",pl="Teby",ja="テーベ",ru="Фивы"), "#5200d0", "#fffb03" ],
+    [ L("English Empire",fr="Empire anglais",de="Englisches Reich",es="Imperio Inglés",it="Impero Inglese",ko="대영 제국",pl="Imperium angielskie"), L("London",fr="Londres",de="London",es="Londres",it="Londra",ko="런던",pl="Londyn",ja="ロンドン",ru="Лондон"), "#ffffff", "#6c0200" ],
+    [ L("French Empire",fr="Empire français",de="Französisches Reich",es="Imperio Francés",it="Impero Francese",ko="프랑스 제국",pl="Imperium francuskie",ru="Франция"), L("Paris",fr="Paris",de="Paris",es="París",it="Parigi",ko="파리",pl="Paryż",ja="パリ",ru="Париж"), "#ebeb8a", "#418dfd" ],
+    [ L("German Empire",fr="Empire allemand",de="Deutsches Reich",es="Imperio Alemán",it="Impero Tedesco",ko="독일 제국",pl="Cesarstwo niemieckie"), L("Berlin",fr="Berlin",de="Berlin",es="Berlín",it="Berlino",ko="베를린",pl="Berlin",ja="ベルリン",ru="Берлин"), "#242b20", "#b3b1b8" ],
+    [ L("Greek Empire",fr="Empire grec",de="Griechisches Reich",es="Imperio Griego",it="Impero Greco",ko="그리스 제국",pl="Imperium greckie",ru="Греция"), L("Athens",fr="Athènes",de="Athen",es="Atenas",it="Atene",ko="아테네",pl="Ateny",ja="アテネ",ru="Афины"), "#418dfd", "#ffffff" ],
+    [ L("Indian Empire",fr="Empire indien",de="Indisches Reich",es="Imperio Indio",it="Impero Indiano",ko="인도 제국",pl="Imperium indyjskie"), L("Delhi",fr="Delhi",de="Delhi",es="Delhi",it="Delhi",ko="델리",pl="Delhi",ja="デリー",ru="Дели"), "#ff9931", "#128706" ],
+    [ L("Iroquois Empire",fr="Empire iroquois",de="Irokesisches Reich",es="Imperio Iroqués",it="Impero Irochese",ko="이로쿼이 제국",pl="Imperium Irokeskie",ru="Империя ирокезов"), L("Onondaga",fr="Onondaga",de="Onondaga",es="Onondaga",it="Onondaga",ko="오논다가",pl="Onondaga",ja="オノンダガ",ru="Онондага"), "#fbc981", "#415656" ],
+    [ L("Japanese Empire",fr="Empire japonais",de="Japanisches Reich",es="Imperio Japonés",it="Impero Giapponese",ko="일본 제국",pl="Cesarstwo japońskie",ja="日本文明"), L("Kyoto",fr="Kyoto",de="Kyoto",es="Kioto",it="Kyoto",ko="교토",pl="Kioto",ja="京都",ru="Киото"), "#b80000", "#ffffff" ],
+    [ L("Ottoman Empire",fr="Empire ottoman",de="Osmanisches Reich",es="Imperio Otomano",it="Impero Ottomano",ko="오스만 제국",pl="Imperium Osmańskie"), L("Istanbul",fr="Istanbul",de="Istanbul",es="Estambul",it="Istanbul",ko="이스탄불",pl="Stambuł",ja="イスタンブール",ru="Стамбул"), "#12521e", "#f7f8c7" ],
+    [ L("Persian Empire",fr="Empire perse",de="Persisches Reich",es="Imperio Persa",it="Impero Persiano",ko="페르시아 제국",pl="Imperium perskie"), L("Persepolis",fr="Persépolis",de="Persepolis",es="Persépolis",it="Persepoli",ko="페르세폴리스",pl="Persepolis",ja="ペルセポリス",ru="Персеполис"), "#f5e637", "#b00703" ],
+    [ L("Roman Empire",fr="Empire romain",de="Römisches Reich",es="Imperio Romano",it="Impero Romano",ko="로마 제국",pl="Imperium rzymskie"), L("Rome",fr="Rome",de="Rom",es="Roma",it="Roma",ko="로마",pl="Rzym",ja="ローマ",ru="Рим"), "#efc600", "#460076" ],
+    [ L("Russian Empire",fr="Empire russe",de="Russisches Reich",es="Imperio Ruso",it="Impero Russo",ko="러시아 제국",pl="Imperium rosyjskie",ru="Российская империя"), L("Moscow",fr="Moscou",de="Moskau",es="Moscú",it="Mosca",ko="모스크바",pl="Moskwa",ja="モスクワ",ru="Москва"), "#000000", "#eeb400" ],
+    [ L("Siamese Empire",fr="Empire siamois",de="Siamesisches Reich",es="Imperio Siamés",it="Impero del Siam",ko="시암 제국",pl="Imperium syjamskie",ru="Сиамская империя"), L("Sukhothai",fr="Sukhothaï",de="Sukhothai",es="Sukhothai",it="Sukhothai",ko="수고타이",pl="Sukhothai",ja="スコータイ",ru="Сукотай"), "#b00703", "#f5e637" ],
+    [ L("Songhai Empire",fr="Empire songhaï",de="Songhai-Reich",es="Imperio de Songhai",it="Impero Songhai",ko="송가이 제국",pl="Imperium songhajskie",ru="Сонгайская империя"), L("Gao",fr="Gao",de="Gao",es="Gao",it="Gao",ko="가오",pl="Gao",ja="ガオ",ru="Гао"), "#5a0009", "#d59113" ],
+# DLC civs
+    [ L("Babylonian Empire",fr="Empire babylonien",de="Babylonisches Reich",es="Imperio Babilonio",it="Impero babilonese",ko="바빌론 제국",pl="Imperium babilońskie",ja="バビロニア文明",ru="Вавилонское царство"), L("Babylon",fr="Babylone",de="Babylon",es="Babilonia",it="Babilonia",ko="바빌론",pl="Babilon",ja="バビロン",ru="Вавилон"), "#c8f8ff", "#2b5161" ],
+    [ L("Mongolian Empire",fr="Empire mongol",de="Mongolisches Reich",es="Imperio Mongol",it="Impero mongolo",ko="몽골 제국",pl="Imperium mongolskie",ja="モンゴル文明",ru="Монгольская империя"), L("Karakorum",fr="Karakorum",de="Karakorum",es="Karakorum",it="Karakorum",ko="카라코람",pl="Karakorum",ja="カラコルム",ru="Каракорум"), "#ff7800", "#510008" ],
+    [ L("Spanish Empire",fr="Empire espagnol",de="Spanisches Reich",es="Imperio Español",it="Impero spagnolo",ko="스페인 제국",pl="Imperium hiszpańskie",ja="スペイン文明",ru="Испания"), L("Madrid",fr="Madrid",de="Madrid",es="Madrid",it="Madrid",ko="마드리드",pl="Madryt",ja="マドリッド",ru="Мадрид"), "#f4a8a8", "#531a1a" ],
+    [ L("Incan Empire",fr="Empire inca",de="Inkareich",es="Imperio Inca",it="Impero Inca",ko="잉카 제국",pl="Imperium Inków",ja="インカ文明",ru="Империя инков"), L("Cusco",fr="Cuzco",de="Cusco",es="Cuzco",it="Cuzco",ko="쿠스코",pl="Cuzco",ja="クスコ",ru="Куско"), "#069f77", "#ffb821" ],
+    [ L("Polynesian Empire",fr="Empire polynésien",de="Polynesisches Reich",es="Imperio Polinesio",it="Polinesia",ko="폴리네시아 제국",pl="Imperium polinezyjskie",ja="ポリネシア帝国",ru="Полинезия"), L("Honolulu",fr="Honolulu",de="Honolulu",es="Honolulú",it="Honolulu",ko="호놀룰루",pl="Honolulu",ja="ホノルル",ru="Гонолулу"), "#ffff4a", "#d95800" ],
+    [ L("Danish Empire",fr="Empire danois",de="Dänisches Reich",es="Imperio Danés",it="Impero Danese",ko="덴마크 제국",pl="Imperium Duńskie",ja="デンマーク帝国",ru="Дания"), L("Copenhagen",fr="Copenhague",de="Kopenhagen",es="Copenhague",it="Copenhagen",ko="코펜하겐",pl="Kopenhaga",ja="コペンハーゲン",ru="Копенгаген"), "#efe7b3", "#6c2a14" ],
 ]
 
 # colours for map features
@@ -175,6 +186,7 @@ html_escape = {
     "&":    "&amp;",
     "<":    "&lt;",
     ">":    "&gt;",
+    '"':    "&quot;",
 }
 
 #
@@ -938,6 +950,14 @@ class Civ5FileReader(object):
             input = file(input, "rb")
         self.r = input
 
+    def read_byte(self):
+        """ Read a single byte as an integer value """
+        t = self.r.read(1)
+        if len(t) != 1:
+            self.eof = True
+            return 0
+        return ord(t)
+
     def read_int(self):
         """ Read a single little endian 4 byte integer """
         # My *guess* is that they're all signed
@@ -965,7 +985,7 @@ class Civ5FileReader(object):
 
     def read_string(self):
         """ Read an undelimited string with the length given in the first 4 bytes """
-        return self.r.read(self.read_int()).decode("utf-8")
+        return self.r.read(self.read_int()).decode("utf-8", 'replace')
 
     def read_terminated_string(self):
         """ Read a nul-terminated string. """
@@ -973,14 +993,14 @@ class Civ5FileReader(object):
         while True:
             c = self.r.read(1)
             if ord(c) == 0:
-                return s.decode("utf-8")
+                return s.decode("utf-8", 'replace')
             s += c
     
     def read_terminated_string_list(self):
         """ Read a list of nul-terminated strings, terminated by a zero-length string. """
         l = []
         while True:
-            s = self.read_terminated_string().decode("utf-8")
+            s = self.read_terminated_string().decode("utf-8", 'replace')
             if s == "":
                 return l
             l.append(s)
@@ -1009,7 +1029,9 @@ class Civ5Map(Civ5FileReader):
 
         self.r = f
         
-        f.read(1)   # no idea
+        first_byte = self.read_byte()   # type/version indicator
+        self.is_scenario = first_byte & 0x80
+        self.map_version = first_byte & 0x0f
 
         # width and height
         self.w = self.read_int()
@@ -1032,13 +1054,14 @@ class Civ5Map(Civ5FileReader):
         f.read(feat2_len)
         self.resources = self.read_sized_string_list(resource_len)
 
-        # whatever those two strings are... 
-        f.read(string1_len)
-        f.read(string2_len)
+        # for exported maps, the name will be the filename (w/o extension) and description will be blank
+        self.map_name = f.read(string1_len)
+        self.map_description = f.read(string2_len)
 
-        # new string
-        string3_len = self.read_int()
-        f.read(string3_len)
+        # new string for version 0xb and later
+        if (self.map_version >= 0x0b):
+            string3_len = self.read_int()
+            f.read(string3_len)
 
         self.map = []
         debugout = []
@@ -1049,7 +1072,9 @@ class Civ5Map(Civ5FileReader):
             for x in range(self.w):
                 tf = struct.unpack("bbbbbbbb", f.read(8))
                 if debug:
-                    if tf[4] == 1:
+                    if tf[4] == 2:
+                        debugout[0] += 'M' # mountain
+                    elif tf[4] == 1:
                         debugout[0] += self.get_terrain(tf[0])[8]
                     else:
                         debugout[0] += self.get_terrain(tf[0])[8].lower()
@@ -1171,7 +1196,8 @@ class Civ5ReplayEvent(object):
         if self.record_type == 0:
             ret += L("[Turn %d] Game ends after %d turns in %s", fr="[Tour %d] Le jeu a pris fin après %d tours en %s") % (self.turn, self.turn, self.text)
         else:
-            ret += L("[Turn %d] %s",fr="[Tour %d] %s") % (self.turn, self.text)
+            ret += L("[Turn %d] %s",fr="[Tour %d] %s",de="[Runde %d] %s",es="[Turno %d] %s",it="[Turno %d] %s",ko="[턴 %d] %s",pl="[Tura %d] %s") % (self.turn, self.text)
+
         return ret
 
 class Civ5Replay(Civ5FileReader):
@@ -1180,11 +1206,22 @@ class Civ5Replay(Civ5FileReader):
     def __init__(self, input):
         Civ5FileReader.__init__(self, input)
 
-        # Localized strings
+        # Localized strings and regexps
         self.l_In = L("In", fr="En")
         self.l_of_the = L("of the ", fr="de l'")
         self.l_turns_played = L("turns played", fr="tours de jeu")
-        self.l_Turn = L("Turn", fr="Tour")
+        # TXT_KEY_TIME_TURN
+        self.l_Turn = L("Turn",fr="Tour",de="Runde",es="Turno",it="Turno",ko="턴",pl="Tura")
+        # TXT_KEY_GAME_WON ja, ru guessed from replays
+        self.l_victory = L(" has won ",fr=" a remporté ",de=" hat den Sieg in der Kategorie ",es=" ha conseguido una ",it=" ha riportato una vittoria ",ko=" 승리를 거두었습니다",pl=" wygrywa przez Zwycięstwo ",ja="勝利を収めた",ru=" одерживает ")
+        # TXT_KEY_MISC_CITY_IS_FOUNDED ; ja (が建設されました。/が創設された。) and ru guessed from replays
+        self.l_founded_str= L(" is founded.",fr=" fondée !",de=" wurde gegründet.",es="Se funda ",it=" è fondata.",ko="이(가) 건설되었습니다.",pl="Powstaje ",ja="設され",ru="Основан город")
+        self.l_founded_re = L("(.*) is founded.",fr="(.*) fondée !",de="Die Stadt (.*) wurde gegründet.",es="Se funda (.*).",it="(.*) è fondata.",ko="(.*)이(가) 건설되었습니다.",pl="Powstaje (.*).",ja="(.*)が.設され.*た。",ru="Основан город (.*).")
+        self.l_founded_comp = None
+        # TXT_KEY_MISC_CITY_RAZED_BY ja, ru guessed from replays
+        self.l_razed = L(" was set ablaze by ",fr=" incendié ",de=" in Brand gesteckt",es=" ha sido arrasada por el ",it=" è stata messa a ferro e fuoco dall",ko="(으)로 인해 불바다가 되었습니다",pl=" podpala ",ru=" огню город ")
+        # TXT_KEY_MISC_CITY_WAS_CAPTURED_BY ja, ru guessed from replays
+        self.l_captured = L(" was captured by ",fr=" pris ",de=" eingenommen",es=" ha capturado ",it=" è stata catturata dall",ko="에 점령당했습니다",pl=" zdobywa ",ja="に占領されました",ru=" захвачен державой ")
 
         # Initialize game information
         self.leader_name = None
@@ -1231,6 +1268,40 @@ class Civ5Replay(Civ5FileReader):
         self.html_h = 600 # will be adjusted as needed to maintain aspect ratio
         self.histogram_scale_w = 0
         self.histogram_scale_h = 0
+
+        # Locale auto-guess. If locale hasn't been explictly specified via
+        # commandline option, we will read the header and iterate the events
+        # until we can guess the locale. Then we will reset the file pointer
+        # to the start of the event list, reinitialize any text strings,
+        # and clear the event list.
+        global locale
+        if debug:
+            p("Locale initially set to " + locale)
+        if locale == "auto":
+            self.read_header()
+            offset = self.r.tell()
+            if debug:
+                p("Will try to guess locale from event text.")
+            last_turn = -1
+            while locale == "auto":
+                last_map = self.map_string()
+                evt = self.read_event()
+                if evt.turn != last_turn:
+                    # p(last_map)
+                    last_turn = evt.turn
+                if ( evt.is_last_event() or (len(self.events) >= self.event_count-1) ):
+                    break
+            self.r.seek(offset)
+            if locale == "auto":
+                locale = "en"
+                if debug:
+                    p("Locale guess failed! Defaulting to English.")
+            self.l_founded_comp = re.compile(self.l_founded_re.s(), re.U)
+            self.difficulty = difficulty_strings[self.difficulty_level]
+            ms = map_sizes[self.map_size_id]
+            self.map_size = ms[0]
+            self.victory_type = victory_types.get(self.victory_type_id, "unknown")
+            self.events = []
     
     def get_enabled_victory_types(self):
         if len(self.victory_types) == 0:
@@ -1266,7 +1337,7 @@ class Civ5Replay(Civ5FileReader):
         self.map_script = self.read_string()            # "Assets\Maps\Pangea.lua"
 
         # Strip the path and .lua suffix from the map script to get the name
-        self.map_name = self.map_script.split("\\")[-1].rsplit(".",1)[0]
+        self.map_name = re.split("[/\\\\]",self.map_script)[-1].rsplit(".",1)[0]
 
         # Next up might be the map size...
         self.map_size_id = self.read_int()
@@ -1295,12 +1366,14 @@ class Civ5Replay(Civ5FileReader):
         self.victory_types = self.read_ints()
 
         # The victory type (-1 for a loss)
-        vt = self.read_int()
-        self.victory_type = victory_types.get(vt, "unknown")
+        self.victory_type_id = self.read_int()
+        self.victory_type = victory_types.get(self.victory_type_id, "unknown")
 
         # How many events there are
         self.event_count = self.read_int()
 
+        # MP: this does not match my replay files, mine seem to immediately go to the data here so
+        # the end result is that some of the initial culture gets skipped.
         # All my files now have 0,1
         hd.append(self.read_int())
         hd.append(self.read_int())
@@ -1325,7 +1398,9 @@ class Civ5Replay(Civ5FileReader):
         event = []
         event.append(self.read_int())
         is_last = False
-        if (len(self.events)==self.event_count-1 and event[0] not in (1,2)) or (event[0] == 0):
+        # MP: Changed the following to >= because of flexd replay 4cf2c522b878bc5e89000004
+        # which somehow had one more event than expected in the list.
+        if (len(self.events)>=self.event_count-1 and event[0] not in (1,2)) or (event[0] == 0):
             # Special rules for the end of the replay
             event.extend(self.read_ints(2))
             event.extend([0,0,0])
@@ -1337,7 +1412,8 @@ class Civ5Replay(Civ5FileReader):
         elif event[0] not in (0,1,2):
             print event, len(self.events), self.event_count
             # I've only seen this in one replay file (note to self: Gandhi_0500 AD-2050-_1)
-            while self.read_int() != -1:
+            # MP: Added self.eof check because this was infinite looping on the flexd replay 4cf2c522b878bc5e89000004
+            while ( (self.read_int() != -1) and (self.eof == False) ):
                 pass
             return Civ5ReplayEvent([1,0,0,-1,-1,0], "")
         else:
@@ -1357,40 +1433,76 @@ class Civ5Replay(Civ5FileReader):
             if event_end != -1:
                 print evt, event_end
             assert(event_end == -1)
+            # Guess locale based upon event text. There's probably a much shorter
+            # and more efficient way to do this....
+            global locale
+            if locale == "auto":
+                for k,v in self.l_founded_str.items():
+                    if isinstance(v,unicode):
+                        if v in evt.text:
+                            locale = k
+                            if debug:
+                                p("Locale set to " + k + " based on city found event on turn " + str(evt.turn))
+                            break
+            if locale == "auto":
+                for k,v in self.l_captured.items():
+                    if isinstance(v,unicode):
+                        if v in evt.text:
+                            locale = k
+                            if debug:
+                                p("Locale set to " + k + " based on city capture event on turn " + str(evt.turn))
+                            break
+            if locale == "auto":
+                for k,v in self.l_razed.items():
+                    if isinstance(v,unicode):
+                        if v in evt.text:
+                            locale = k
+                            if debug:
+                                p("Locale set to " + k + " based on city razed event on turn " + str(evt.turn))
+                            break
+            if locale == "auto":
+                for k,v in self.l_victory.items():
+                    if isinstance(v,unicode):
+                        if v in evt.text:
+                            locale = k
+                            if debug:
+                                p("Locale set to " + k + " based on victory event on turn " + str(evt.turn))
+                            break
             # reset captured data if this is a new turn
             if len(self.events)>1 and evt.turn != self.events[-2].turn:
                 self.captured = {}
             # remember victory message
-            if L(" has won ", fr=" a remporté ").s() in evt.text:
+            if self.l_victory.s() in evt.text:
                 self.victory_text = evt.text
             # remember city name
             if evt.event_type == 1:
                 evt.city = 1
-                founded = L("is founded.", fr="fondée !").s()
-                if evt.text.endswith(founded):
-                    city = evt.text[:-len(founded)-1]
-                    self.cities[(evt.x, evt.y)] = city
-                    if evt.turn == 0 and evt.civ == 01:
-                        self.citystates[(evt.x, evt.y)] = city
-                    evt.city_name = city
-                    evt.city = 1
-                    # try to guess the civ from the first city it founds
-                    if evt.civ != -1:
-                        while len(self.civs) <= evt.civ:
-                            self.civs.append(["Unknown Empire", "Unknown First City", "black", "white"])
-                        if self.civs[evt.civ][0] == "Unknown Empire":
-                            for c in civs:
-                                if c[1] == city:
-                                    self.civs[evt.civ] = map(unicode,c)
+                if self.l_founded_comp is not None:
+                    m = self.l_founded_comp.match(evt.text)
+                    if m is not None:
+                        city = m.group(1)
+                        self.cities[(evt.x, evt.y)] = city
+                        if evt.turn == 0 and evt.civ == 01:
+                            self.citystates[(evt.x, evt.y)] = city
+                        evt.city_name = city
+                        evt.city = 1
+                        # try to guess the civ from the first city it founds
+                        if evt.civ != -1:
+                            while len(self.civs) <= evt.civ:
+                                self.civs.append(["Unknown Empire", "Unknown First City", "black", "white"])
+                            if self.civs[evt.civ][0] == "Unknown Empire":
+                                for c in civs:
+                                    if c[1] == city:
+                                        self.civs[evt.civ] = map(unicode,c)
             if (evt.x, evt.y) in self.cities:
                 # we already know from earlier that this tile has a city
                 evt.city = 1
                 evt.city_name = self.cities[(evt.x, evt.y)]
-            if L(" was set ablaze by ", fr=" a incendié ").s() in evt.text:
+            if self.l_razed.s() in evt.text:
                 # the city on this tile is being razed
                 if evt.city == 1:
                     self.razed.append((evt.x, evt.y))
-            captured = L(" was captured by ", fr=" a pris ").s()
+            captured = self.l_captured.s()
             if captured in evt.text:
                 # if it was being razed, it now no longer is
                 if (evt.x, evt.y) in self.razed:
@@ -1667,6 +1779,8 @@ class Civ5Replay(Civ5FileReader):
                                     bg = "transparent"
                 elif evt.civ >= 0:
                     # a tile is being flipped to a new owner
+                    #MP debug
+                    #p("city flip event for civ " + str(evt.civ))
                     fg = self.civs[evt.civ][2]
                     bg = self.civs[evt.civ][3]
                 else:
