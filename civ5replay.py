@@ -61,12 +61,13 @@ class L(object):
 
 def p(*s):
     """ Helper function replacing print for utf-8 output"""
-    for e in s:
-        if not isinstance(e, unicode):
-            e = unicode(e)
-        sys.stdout.write(e.encode("utf-8"))
-        sys.stdout.write(" ")
-    sys.stdout.write("\n")
+    if debug:
+      for e in s:
+          if not isinstance(e, unicode):
+              e = unicode(e)
+          sys.stdout.write(e.encode("utf-8"))
+          sys.stdout.write(" ")
+      sys.stdout.write("\n")
 
 # difficulty level names TXT_KEY_HANDICAP_* Still need ja and ru
 difficulty_strings = [
